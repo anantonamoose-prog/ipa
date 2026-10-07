@@ -41,6 +41,8 @@ jobs:
                   PRODUCT_BUNDLE_IDENTIFIER: com.cinejoy.native
                   INFOPLIST_FILE: CinejoyNative/Info.plist
                   SWIFT_VERSION: "5.0"
+                  TARGETED_DEVICE_FAMILY: "1,2"
+                  IPHONEOS_DEPLOYMENT_TARGET: "17.0"
           EOF
 
           xcodegen generate
@@ -48,6 +50,8 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
+
+          rm -rf "$GITHUB_WORKSPACE/output"
 
           xcodebuild \
             -project CinejoyNative.xcodeproj \
@@ -57,9 +61,13 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
             build \
             CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/output" \
             2>&1 | tee build.log
+
+          echo "===== BUILD OUTPUT ====="
+          find "$GITHUB_WORKSPACE/output" -maxdepth 3 -print
 
       - name: Show build errors
         if: failure()
@@ -68,12 +76,89 @@ jobs:
           grep -n -E "error:|BUILD FAILED|SwiftCompile" build.log || true
           echo "===== END ERRORS ====="
 
+      - name: Verify app
+        if: success()
+        run: |
+          set -e
+
+          APP_PATH="$GITHUB_WORKSPACE/output/CinejoyNative.app"
+
+          echo "Checking for:"
+          echo "$APP_PATH"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: CinejoyNative.app was not found!"
+            echo "===== AVAILABLE FILES ====="
+            find "$GITHUB_WORKSPACE/output" -maxdepth 4 -print
+            exit 1
+          fi
+
+          echo "===== APP CONTENTS ====="
+          find "$APP_PATH" -maxdepth 2 -print
+
+          if [ ! -f "$APP_PATH/CinejoyNative" ]; then
+            echo "ERROR: CinejoyNative executable was not found!"
+            exit 1
+          fi
+
+          echo "===== EXECUTABLE INFO ====="
+          file "$APP_PATH/CinejoyNative"
+
+          echo "===== APP SIZE ====="
+          du -sh "$APP_PATH"
+
+          echo "App verification successful."
+
       - name: Package IPA
         if: success()
         run: |
-          mkdir -p Payload
-          cp -R output/CinejoyNative.app Payload/
-          zip -r CinejoyNative.ipa Payload
+          set -e
+
+          APP_PATH="$GITHUB_WORKSPACE/output/CinejoyNative.app"
+
+          rm -rf "$GITHUB_WORKSPACE/Payload"
+          rm -f "$GITHUB_WORKSPACE/CinejoyNative.ipa"
+
+          mkdir -p "$GITHUB_WORKSPACE/Payload"
+
+          cp -R "$APP_PATH" "$GITHUB_WORKSPACE/Payload/"
+
+          echo "===== PAYLOAD ====="
+          find "$GITHUB_WORKSPACE/Payload" -maxdepth 2 -print
+
+          cd "$GITHUB_WORKSPACE"
+
+          /usr/bin/zip -r CinejoyNative.ipa Payload
+
+          echo "===== IPA CREATED ====="
+          ls -lh CinejoyNative.ipa
+
+          echo "===== IPA CONTENTS ====="
+          unzip -l CinejoyNative.ipa
+
+      - name: Verify IPA
+        if: success()
+        run: |
+          set -e
+
+          if [ ! -f "$GITHUB_WORKSPACE/CinejoyNative.ipa" ]; then
+            echo "ERROR: IPA was not created!"
+            exit 1
+          fi
+
+          IPA_SIZE=$(stat -f%z "$GITHUB_WORKSPACE/CinejoyNative.ipa")
+
+          echo "IPA size: $IPA_SIZE bytes"
+
+          if [ "$IPA_SIZE" -lt 100000 ]; then
+            echo "WARNING: IPA is unusually small."
+          fi
+
+          echo "Checking IPA structure..."
+
+          unzip -l "$GITHUB_WORKSPACE/CinejoyNative.ipa" | grep "Payload/CinejoyNative.app/CinejoyNative"
+
+          echo "IPA verification successful."
 
       - name: Upload IPA
         if: success()
@@ -81,3 +166,9 @@ jobs:
         with:
           name: CinejoyNative-IPA
           path: CinejoyNative.ipa
+          if-no-files-found: error
+:::
+
+**After replacing the file:** commit it, go to **Actions → Build Cinejoy Native iOS → Run workflow**.
+
+The important improvement is that this version won't silently produce a tiny IPA. It checks that `CinejoyNative.app` and the actual `CinejoyNative` executable are present **before** packaging.
