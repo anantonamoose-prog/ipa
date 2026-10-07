@@ -167,8 +167,3 @@ jobs:
           name: CinejoyNative-IPA
           path: CinejoyNative.ipa
           if-no-files-found: error
-:::
-
-**After replacing the file:** commit it, go to **Actions → Build Cinejoy Native iOS → Run workflow**.
-
-The important improvement is that this version won't silently produce a tiny IPA. It checks that `CinejoyNative.app` and the actual `CinejoyNative` executable are present **before** packaging.
