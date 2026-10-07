@@ -11,10 +11,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show Xcode version
+        run: xcodebuild -version
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Create Xcode project
+      - name: Generate project
         run: |
           cat > project.yml <<'EOF'
           name: CinejoyNative
@@ -28,19 +31,19 @@ jobs:
               platform: iOS
               deploymentTarget: "17.0"
               sources:
-                - CinejoyNative
+                - path: CinejoyNative
               settings:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.cinejoy.native
                   INFOPLIST_KEY_CFBundleDisplayName: Cinejoy
-                  SWIFT_VERSION: 5.0
+                  SWIFT_VERSION: "5.0"
           EOF
 
-      - name: Generate Xcode project
-        run: xcodegen generate
+          xcodegen generate
 
-      - name: Build unsigned app
+      - name: Build
         run: |
+          set -o pipefail
           xcodebuild \
             -project CinejoyNative.xcodeproj \
             -scheme CinejoyNative \
@@ -50,7 +53,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build \
-            CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/output"
+            CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/output" \
+            2>&1 | tee build.log
+
+      - name: Show build errors
+        if: failure()
+        run: |
+          echo "===== XCODE ERRORS ====="
+          grep -n -E "error:|BUILD FAILED|SwiftCompile" build.log || true
+          echo "===== END ERRORS ====="
 
       - name: Package IPA
         run: |
@@ -59,6 +70,7 @@ jobs:
           zip -r CinejoyNative.ipa Payload
 
       - name: Upload IPA
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: CinejoyNative-IPA
