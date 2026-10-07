@@ -17,7 +17,7 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate project
+      - name: Generate Xcode project
         run: |
           cat > project.yml <<'EOF'
           name: CinejoyNative
@@ -30,12 +30,16 @@ jobs:
               type: application
               platform: iOS
               deploymentTarget: "17.0"
+
               sources:
                 - path: CinejoyNative
+                  excludes:
+                    - Info.plist
+
               settings:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.cinejoy.native
-                  INFOPLIST_KEY_CFBundleDisplayName: Cinejoy
+                  INFOPLIST_FILE: CinejoyNative/Info.plist
                   SWIFT_VERSION: "5.0"
           EOF
 
@@ -44,6 +48,7 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
+
           xcodebuild \
             -project CinejoyNative.xcodeproj \
             -scheme CinejoyNative \
@@ -64,6 +69,7 @@ jobs:
           echo "===== END ERRORS ====="
 
       - name: Package IPA
+        if: success()
         run: |
           mkdir -p Payload
           cp -R output/CinejoyNative.app Payload/
